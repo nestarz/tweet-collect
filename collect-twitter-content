@@ -1,0 +1,125 @@
+#!/bin/bash
+
+if [[ -z "$1" ]]; then
+    exec >> /tmp/coltwit.$( date +%Y%m%d ) 2>&1
+fi
+echo
+echo
+date
+
+myloc=$( readlink -f "$( dirname "$0" )" )
+
+cd "$myloc"
+
+export PATH=/home/abakun/usr/bin:/home/abakun/bin:/home/abakun/.gems/bin:/usr/lib/ruby/gems/1.8/bin/:/usr/local/bin:/usr/bin:/bin:/usr/bin/X11:/usr/games
+export HOME="$myloc/twurlconfs/thwarted"
+
+echo
+env | sort
+echo
+
+tdir=$( mktemp -d )
+trap 'rm -rf "$tdir"' EXIT
+
+set -x
+
+function media_for() {
+    local input="$1"
+    local mediabase=${input%%.tweet.json}
+    local h
+    local outfile
+
+    if [[ -z "$input" || ! -s "$input" ]]; then
+        return
+    fi
+
+    for mediaurl in $( cat "$input" | jq '.[].entities.media[].media_url' | tr -d \" ); do
+        ext=${mediaurl##*.}
+        h=$( echo -n "$mediaurl" | sha1sum - | awk '{ print $1 }' )
+        b=${mediaurl##*/}
+        b=${b%.*}
+        outfile=$( printf '%s.tweetmedia-%s.%s.%s' "$mediabase" "$b" "$h" "$ext" )
+        echo "downloading $mediaurl to $outfile"
+        if [[ ! -s "$outfile" ]]; then
+            wget -O "$outfile" "$mediaurl"
+        fi
+    done
+}
+
+function split_into() {
+    local ddir="$1"
+    local sfile="$2"
+    local id
+    local id_str
+    local user
+    local filename
+
+    if [[ -z "$sfile" || ! -s "$sfile" ]]; then
+        return
+    fi
+
+    for id_str in $( cat "$sfile" | jq '.[].id_str' ); do
+        id=${id_str//\"/}
+        user=$( cat "$sfile" | jq "map(select(.id_str == $id_str)) | .[0].retweeted_status.user.screen_name" | tr -d \" )
+        if [[ "$user" == "null" ]]; then
+            # will this collide with the user named null who has tweeted 4 times in 8 years? who cares
+            user=$( cat "$sfile" | jq "map(select(.id_str == $id_str)) | .[0].user.screen_name" | tr -d \" )
+        fi
+        filename=$ddir/$id-$user.tweet.json
+        if [[ ! -s "$filename" ]]; then
+            echo "$id_str"
+            cat "$sfile" | jq "map(select(.id_str == $id_str))" > $filename
+            media_for "$filename"
+        fi
+    done
+}
+
+function get_favorites() {
+    local since_id
+
+    if [[ $# -eq 0 ]]; then
+        since_id=$( ls archive/favorites/ | sort | tail -n 100 | head -n 1 | cut -f1 -d- )
+    else
+        since_id="$1"
+    fi
+
+    twurl "/1.1/favorites/list.json?since_id=${since_id}&count=200" > $tdir/twitter.favorites.json
+    echo >&2 twurl returned $?
+
+    [[ $( jq .errors < $tdir/twitter.favorites.json 2>/dev/null ) == 'null' ]] && return 1
+
+    echo Found $( jq length < $tdir/twitter.favorites.json ) favorites
+
+    split_into ./archive/favorites $tdir/twitter.favorites.json
+
+    cp $tdir/twitter.favorites.json /tmp/last.favorites.json
+}
+
+function get_timeline() {
+    local since_id
+
+    if [[ $# -eq 0 ]]; then
+        since_id=$( ls archive/tweets/ | sort | tail -n 2 | head -n 1 | cut -f1 -d- )
+    else
+        since_id="$1"
+    fi
+    
+    twurl "/1.1/statuses/user_timeline.json?count=800&since_id=${since_id}" > $tdir/twitter.user.json
+    echo >&2 twurl returned $?
+
+    [[ $( jq .errors < $tdir/twitter.user.json 2>/dev/null ) == 'null' ]] && return 1
+
+    echo Found $( jq length < $tdir/twitter.user.json ) entries
+
+    split_into ./archive/tweets $tdir/twitter.user.json
+
+    cp $tdir/twitter.user.json /tmp/last.user.json
+}
+
+get_favorites $1
+get_timeline $1
+
+#for f in $( find archive/tweets/ archive/favorites/ -type f ) ; do
+#    media_for "$f"
+#done
+#media_for archive/tweets/601109879177089024-thwarted.tweet.json
