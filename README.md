@@ -17,4 +17,4 @@ Put it in crontab to run every hour or whatever.
 
 Get rid of all the lame double quote stripping, `jq -r` can handle most of these.
 
-Download more links and shit, lest the disappear from the internet forever.
+Download more links and shit, lest they disappear from the internet forever.
