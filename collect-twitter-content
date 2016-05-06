@@ -35,7 +35,7 @@ function media_for() {
 
     # TODO support grabbing video content
     # some may be in .extended_entities.media[].video_info.variants
-    for mediaurl in $( cat "$input" | jq '.[].entities.media[].media_url' | tr -d \" ); do
+    for mediaurl in $( cat "$input" | jq -r '.[].extended_entities.media[].media_url' ); do
         ext=${mediaurl##*.}
         h=$( echo -n "$mediaurl" | sha1sum - | awk '{ print $1 }' )
         b=${mediaurl##*/}
