@@ -23,7 +23,7 @@ trap 'rm -rf "$tdir"' EXIT
 
 set -x
 
-function media_for() {
+function download_media_for() {
     local input="$1"
     local mediabase=${input%%.tweet.json}
     local h
@@ -33,9 +33,7 @@ function media_for() {
         return
     fi
 
-    # TODO support grabbing video content
-    # some may be in .extended_entities.media[].video_info.variants
-    for mediaurl in $( cat "$input" | jq -r '.[].extended_entities.media[].media_url' ); do
+    for mediaurl in $( cat "$input" | jq -r '.[].extended_entities.media[].media_url , .[].extended_entities.media[].video_info.variants[].url' ) ; do
         ext=${mediaurl##*.}
         h=$( echo -n "$mediaurl" | sha1sum - | awk '{ print $1 }' )
         b=${mediaurl##*/}
@@ -71,7 +69,7 @@ function split_into() {
         if [[ ! -s "$filename" ]]; then
             echo "$id_str"
             cat "$sfile" | jq "map(select(.id_str == $id_str))" > $filename
-            media_for "$filename"
+            download_media_for "$filename"
         fi
     done
 }
@@ -153,6 +151,6 @@ get_latest_favorites $1
 get_timeline $1
 
 #for f in $( find archive/tweets/ archive/favorites/ -type f ) ; do
-#    media_for "$f"
+#    download_media_for "$f"
 #done
-#media_for archive/tweets/601109879177089024-thwarted.tweet.json
+#download_media_for archive/tweets/601109879177089024-thwarted.tweet.json
